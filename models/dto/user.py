@@ -19,10 +19,8 @@ class User(db.Model):
         return User.query.all()
 
     @staticmethod
-    def get_user_by_conditions(fields=None, **kwargs):
-        if fields is None:
-            fields = [User.id, User.name, User.password]
-        return User.query.with_entities(*fields).filter_by(**kwargs).all()
+    def get_user_by_conditions(**kwargs):
+        return User.query.filter_by(**kwargs).all()
 
     @staticmethod
     def update_user(_id: str, _name: str, _password: str) -> None:

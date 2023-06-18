@@ -5,7 +5,9 @@ from werkzeug.security import check_password_hash
 
 def get_user_by_id(id: str) -> List[User]:
     users: List[User] = User.get_user_by_conditions(id=id)
-    return users
+    if users:
+        return {"error": "User not found"}
+    return [user.json() for user in users]
 
 
 def authenticate_user(id: str, password: str) -> Optional[User]:
@@ -13,6 +15,6 @@ def authenticate_user(id: str, password: str) -> Optional[User]:
     print(users[0].password)
     print(password)
     if users and check_password_hash(users[0].password, password):
-        return users[0]
+        return users[0].json()
     else:
-        return None
+        return {"error": "User not found or password was worng"}
