@@ -95,19 +95,22 @@ def add_work_data(work_data):
     #     return str(e)
 
 
-def get_work_data_by_month(date_str):
+def get_work_data_by_month(user_id, date_str):
     work_date = datetime.strptime(date_str, "%Y-%m").date()
     return query_work_data(
         and_(
+            WorkData.user_id == user_id,
             extract("year", WorkData.work_date) == work_date.year,
             extract("month", WorkData.work_date) == work_date.month,
         )
     )
 
 
-def get_work_data_by_day(date_str):
+def get_work_data_by_day(user_id, date_str):
     work_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-    return query_work_data(WorkData.work_date == work_date)
+    return query_work_data(
+        and_(WorkData.user_id == user_id, WorkData.work_date == work_date)
+    )
 
 
 def query_work_data(filter_condition) -> List[Dict]:

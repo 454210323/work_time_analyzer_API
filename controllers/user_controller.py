@@ -1,13 +1,13 @@
 from typing import List, Dict, Optional, Union, Any
 from flask import Blueprint, jsonify, request
-from services.user_service import get_user_by_id, authenticate_user
+from services.user_service import get_user_infos, authenticate_user
 
 bp_user = Blueprint("user", __name__, url_prefix="/users")
 
 
 @bp_user.route("/<string:id>", methods=["GET"])
-def get_user(id: str):
-    users = get_user_by_id(id)
+def get_users(id: str):
+    users = get_user_infos(id=id)
     return jsonify(users), 200
 
 

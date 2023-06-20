@@ -9,6 +9,7 @@ class User(db.Model):
     id = db.Column(db.String(100), primary_key=True)
     name = db.Column(db.String(100))
     password = db.Column(db.String(1000))
+    team_id = db.Column(db.String(2))
 
     def add_user(self) -> None:
         db.session.add(self)
@@ -35,4 +36,9 @@ class User(db.Model):
         db.session.commit()
 
     def json(self) -> Dict[str, str]:
-        return {"id": self.id, "name": self.name, "password": self.password}
+        return {
+            "id": self.id,
+            "name": self.name,
+            "password": self.password,
+            "team_id": self.team_id,
+        }
