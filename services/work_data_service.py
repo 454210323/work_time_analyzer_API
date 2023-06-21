@@ -1,19 +1,22 @@
-from models.dto.work_data import WorkData
-from models.dto.work_category import WorkCategory
-from datetime import datetime
-from sqlalchemy import func, extract, and_
-from database import db
 import logging
-from typing import List, Dict
+from datetime import datetime
+from typing import Dict, List
 
+import pandas as pd
+from sqlalchemy import and_, extract, func
 from sqlalchemy.orm import aliased
+
+from database import db
+from models.dto.team import Team
+from models.dto.user import User
+from models.dto.work_category import WorkCategory
+from models.dto.work_data import WorkData
 
 
 def parse_json(work_data):
     user_id = work_data.get("user_id")
     work_date = datetime.strptime(work_data.get("work_date"), "%Y-%m-%d")
     seq = work_data.get("seq")
-
     major_category_id = work_data.get("major_category_id")
     sub_category_id = work_data.get("sub_category_id")
     sub_sub_category_id = work_data.get("sub_sub_category_id")
@@ -59,7 +62,6 @@ def modify_work_data(work_data):
 
 
 def add_work_data(work_data):
-    # try:
     (
         user_id,
         work_date,
@@ -89,77 +91,91 @@ def add_work_data(work_data):
         work_content=work_content,
     )
     new_work_data.add_work_data()
-    return "insert successfully"
-    # except Exception as e:
-    #     logging.exception(e)
-    #     return str(e)
+    return "add successfully"
 
 
-def get_work_data_by_month(user_id, date_str):
+def get_work_data_by_month_and_user(user_id, date_str):
     work_date = datetime.strptime(date_str, "%Y-%m").date()
-    return query_work_data(
-        and_(
-            WorkData.user_id == user_id,
-            extract("year", WorkData.work_date) == work_date.year,
-            extract("month", WorkData.work_date) == work_date.month,
+
+    def modify_query(query):
+        return query.filter(
+            and_(
+                WorkData.user_id == user_id,
+                extract("year", WorkData.work_date) == work_date.year,
+                extract("month", WorkData.work_date) == work_date.month,
+            )
         )
-    )
+
+    return query_work_data(modify_query)
 
 
-def get_work_data_by_day(user_id, date_str):
+def get_work_data_by_month_and_team(data: Dict):
+    work_date = datetime.strptime(data.get("date"), "%Y-%m").date()
+    team_id = data.get("team_id")
+
+    def modify_query(query):
+        return query.filter(
+            and_(
+                User.team_id == team_id,
+                extract("year", WorkData.work_date) == work_date.year,
+                extract("month", WorkData.work_date) == work_date.month,
+            )
+        )
+
+    return query_work_data(modify_query)
+
+
+def get_work_data_by_day_and_user(user_id, date_str):
     work_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-    return query_work_data(
-        and_(WorkData.user_id == user_id, WorkData.work_date == work_date)
-    )
+
+    def modify_query(query):
+        return query.filter(
+            and_(WorkData.user_id == user_id, WorkData.work_date == work_date)
+        )
+
+    return query_work_data(modify_query)
 
 
-def query_work_data(filter_condition) -> List[Dict]:
-    # åˆ›å»ºåˆ«åä»¥è¿›è¡Œå¤šæ¬¡è”æ¥
+def query_work_data(modify_query) -> List[Dict]:
     MajorCategory = aliased(WorkCategory)
     SubCategory = aliased(WorkCategory)
     SubSubCategory = aliased(WorkCategory)
-
-    # åŠ è½½WorkDataå¹¶è”æ¥WorkCategory
-    work_data = (
+    
+    query = (
         db.session.query(
             WorkData,
+            User.name.label("user_name"),
             MajorCategory.category_name.label("major_category_name"),
             SubCategory.category_name.label("sub_category_name"),
             SubSubCategory.category_name.label("sub_sub_category_name"),
         )
+        .outerjoin(User, WorkData.user_id == User.id)
         .outerjoin(MajorCategory, WorkData.major_category_id == MajorCategory.id)
         .outerjoin(SubCategory, WorkData.sub_category_id == SubCategory.id)
         .outerjoin(SubSubCategory, WorkData.sub_sub_category_id == SubSubCategory.id)
-        .filter(
-            filter_condition,
-        )
         .order_by(WorkData.work_date, WorkData.seq)
-        .all()
     )
 
-    # åˆå§‹åŒ–ç»“æœåˆ—è¡¨
-    result = []
+    work_data = modify_query(query).all()
 
-    # åˆå§‹åŒ–å˜é‡ç”¨äºå­˜å‚¨å½“å‰æ—¥æœŸçš„æ•°æ®
+    result = []
     current_date_data = None
     current_date = None
 
     for (
         data,
+        user_name,
         major_category_name,
         sub_category_name,
         sub_sub_category_name,
     ) in work_data:
         if data.work_date != current_date:
-            # ä¸€ä¸ªæ–°çš„æ—¥æœŸå¼€å§‹ï¼Œå°†å‰ä¸€å¤©çš„æ•°æ®æ·»åŠ åˆ°ç»“æœä¸­
             if current_date_data is not None:
                 result.append(current_date_data)
 
-            # å¼€å§‹æ–°çš„æ—¥æœŸ
             current_date = data.work_date
             current_date_data = {"date": current_date.isoformat(), "data": []}
 
-        # æ·»åŠ å½“å‰æ•°æ®
         current_date_data["data"].append(
             {
                 "seq": data.seq,
@@ -178,11 +194,42 @@ def query_work_data(filter_condition) -> List[Dict]:
                 },
                 "work_time": float(data.work_time) if data.work_time else None,
                 "work_content": data.work_content,
+                "user_name": user_name,
             }
         )
 
-    # æ·»åŠ æœ€åä¸€å¤©çš„æ•°æ®
     if current_date_data is not None:
         result.append(current_date_data)
 
     return result
+
+def get_work_data_by_month_and_team_excel(data: Dict):
+    work_data=get_work_data_by_month_and_team(data)
+    data_list = []
+    for item in work_data:
+        date = item['date']
+        for data in item['data']:
+            data_list.append({
+                'date': date,
+                'user_name': data['user_name'],
+                'major_category': data['major_category']['category_name'],
+                'sub_category': data['sub_category']['category_name'],
+                'sub_sub_category': data['sub_sub_category']['category_name'],
+                'work_time': data['work_time']
+            })
+
+    return data_list
+    # # ?Œš DataFrame
+    # df = pd.DataFrame(data_list)
+
+    # # ª˜ major_categoryAuser_name ˜a sub_category ?Œš‘½?õˆø
+    # df.set_index(['major_category', 'user_name', 'sub_category'], inplace=True)
+
+    # # ª˜õˆø? work_time ?sãÚ‡
+    # # g—p lambda ”Ÿ”?—‘Š“¯ major_category ˜a sub_category “Iî™v
+    # df['work_time'] = df.groupby(level=df.index.names)['work_time'].transform(lambda x: ', '.join(f'{i[0]}+{i[1]}' for i in zip(df.loc[x.index, 'sub_sub_category'], x)))
+
+    # # ?œd?“Is
+    # df = df.loc[~df.index.duplicated(keep='first')]
+
+    # df.to_excel("output.xlsx",sheet_name="123")

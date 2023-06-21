@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional, Union, Any
 from models.dto.user import User
 from models.dto.team import Team
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash,generate_password_hash
 
 
 def get_user_infos(**kwargs) -> List[User]:
@@ -24,3 +24,13 @@ def authenticate_user(id: str, password: str) -> Optional[User]:
         return user.json()
     else:
         return {"error": "User not found or password was worng"}
+
+def register_user(data:Dict):
+        user=User(
+            id=data.get("id"),
+            name=data.get("name"),
+            password=generate_password_hash(data.get("password")),
+            team_id=data.get("team_id")
+        )
+        user.add_user()
+        return "add successfully"

@@ -1,2 +1,9 @@
-data = {"key1": "value1", "key2": "value2"}
-print(dict(data.pop("key1", None)))
+list1 = [1, 2, 3, 4, 5]
+
+for item in list1:
+    print(item + 1)
+print("------------")
+
+[print(item + 1) for item in list1]
+
+
