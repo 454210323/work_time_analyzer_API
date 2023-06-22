@@ -1,6 +1,8 @@
 import logging
 from datetime import datetime
 from typing import Dict, List
+from collections import defaultdict
+from functools import reduce
 
 import pandas as pd
 from sqlalchemy import and_, extract, func
@@ -11,6 +13,32 @@ from models.dto.team import Team
 from models.dto.user import User
 from models.dto.work_category import WorkCategory
 from models.dto.work_data import WorkData
+
+
+def classify_list(data_list):
+    results = defaultdict(str)
+
+    for item in data_list:
+        key = (item["major_category"], item["sub_category"], item["user_name"])
+        # results[key] += f"{item['work_time']} {item['sub_sub_category'] if item['sub_sub_category'] !='辟｡' else ''}"
+        sub_sub_category = item["sub_sub_category"]
+        n = "\n"
+        results[
+            key
+        ] += f"{item['work_time']} {sub_sub_category+n if sub_sub_category != '辟｡' else ''}"
+
+    results_list = [
+        {
+            "major_category": k[0],
+            "sub_category": k[1],
+            "user_name": k[2],
+            "work_time": reduce(lambda a, b: float(a) + float(b), v.strip().split(" "))
+            if "\n" not in v
+            else v,
+        }
+        for k, v in results.items()
+    ]
+    return results_list
 
 
 def parse_json(work_data):
@@ -140,7 +168,7 @@ def query_work_data(modify_query) -> List[Dict]:
     MajorCategory = aliased(WorkCategory)
     SubCategory = aliased(WorkCategory)
     SubSubCategory = aliased(WorkCategory)
-    
+
     query = (
         db.session.query(
             WorkData,
@@ -203,33 +231,25 @@ def query_work_data(modify_query) -> List[Dict]:
 
     return result
 
+
 def get_work_data_by_month_and_team_excel(data: Dict):
-    work_data=get_work_data_by_month_and_team(data)
+    work_data = get_work_data_by_month_and_team(data)
     data_list = []
     for item in work_data:
-        date = item['date']
-        for data in item['data']:
-            data_list.append({
-                'date': date,
-                'user_name': data['user_name'],
-                'major_category': data['major_category']['category_name'],
-                'sub_category': data['sub_category']['category_name'],
-                'sub_sub_category': data['sub_sub_category']['category_name'],
-                'work_time': data['work_time']
-            })
+        date = item["date"]
+        for data in item["data"]:
+            data_list.append(
+                {
+                    "date": date,
+                    "user_name": data["user_name"],
+                    "major_category": data["major_category"]["category_name"],
+                    "sub_category": data["sub_category"]["category_name"],
+                    "sub_sub_category": data["sub_sub_category"]["category_name"],
+                    "work_time": data["work_time"],
+                }
+            )
+    data_dict = classify_list(data_list)
+    df = pd.DataFrame(data_dict)
+    print(df)
 
-    return data_list
-    # # ?建 DataFrame
-    # df = pd.DataFrame(data_list)
-
-    # # 根据 major_category、user_name 和 sub_category ?建多?索引
-    # df.set_index(['major_category', 'user_name', 'sub_category'], inplace=True)
-
-    # # 根据索引? work_time ?行聚合
-    # # 使用 lambda 函数?理相同 major_category 和 sub_category 的情况
-    # df['work_time'] = df.groupby(level=df.index.names)['work_time'].transform(lambda x: ', '.join(f'{i[0]}+{i[1]}' for i in zip(df.loc[x.index, 'sub_sub_category'], x)))
-
-    # # ?除重?的行
-    # df = df.loc[~df.index.duplicated(keep='first')]
-
-    # df.to_excel("output.xlsx",sheet_name="123")
+    return data_dict
