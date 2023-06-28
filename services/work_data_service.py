@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Dict, List
 from collections import defaultdict
 from functools import reduce
+from pathlib import Path
 
 import pandas as pd
 from sqlalchemy import and_, extract, func
@@ -13,32 +14,8 @@ from models.dto.team import Team
 from models.dto.user import User
 from models.dto.work_category import WorkCategory
 from models.dto.work_data import WorkData
+from  services import work_category_service
 
-
-def classify_list(data_list):
-    results = defaultdict(str)
-
-    for item in data_list:
-        key = (item["major_category"], item["sub_category"], item["user_name"])
-        # results[key] += f"{item['work_time']} {item['sub_sub_category'] if item['sub_sub_category'] !='無' else ''}"
-        sub_sub_category = item["sub_sub_category"]
-        n = "\n"
-        results[
-            key
-        ] += f"{item['work_time']} {sub_sub_category+n if sub_sub_category != '無' else ''}"
-
-    results_list = [
-        {
-            "major_category": k[0],
-            "sub_category": k[1],
-            "user_name": k[2],
-            "work_time": reduce(lambda a, b: float(a) + float(b), v.strip().split(" "))
-            if "\n" not in v
-            else v,
-        }
-        for k, v in results.items()
-    ]
-    return results_list
 
 
 def parse_json(work_data):
@@ -232,24 +209,59 @@ def query_work_data(modify_query) -> List[Dict]:
     return result
 
 
-def get_work_data_by_month_and_team_excel(data: Dict):
+def generate_work_data_excel(data: Dict):
+    selected_date = data.get('date')
     work_data = get_work_data_by_month_and_team(data)
-    data_list = []
-    for item in work_data:
-        date = item["date"]
-        for data in item["data"]:
-            data_list.append(
-                {
-                    "date": date,
-                    "user_name": data["user_name"],
-                    "major_category": data["major_category"]["category_name"],
-                    "sub_category": data["sub_category"]["category_name"],
-                    "sub_sub_category": data["sub_sub_category"]["category_name"],
-                    "work_time": data["work_time"],
-                }
-            )
-    data_dict = classify_list(data_list)
-    df = pd.DataFrame(data_dict)
-    print(df)
 
-    return data_dict
+    pivot_work_df=pd.DataFrame()
+
+    major_sub_categories = {}
+    parent_categories = work_category_service.get_category("")
+
+    for parent_category in parent_categories:
+        parent_category_id = parent_category.get("id")
+        parent_category_name = parent_category.get("category_name")
+        sub_categories = work_category_service.get_category(parent_category_id)
+        
+        # extract sub-category names and store them as a list associated with the parent category
+        major_sub_categories[parent_category_name] = [category.get("category_name") for category in sub_categories]
+
+
+    # major_sub_categories = {
+    #     '保守': ['AB票', '情報交換票', '管理・その他', '障害票'],
+    #     '新会員制度': ['基本設計', '移行・リリース', '管理・その他', '結合テスト', '総合テスト', '製造・単体', '詳細設計', '調査']
+    # }
+    multi_index_columns = pd.MultiIndex.from_tuples([(major, sub) for major, subs in major_sub_categories.items() for sub in subs])
+    if work_data:
+        flattened_data_list = []
+        for item in work_data:
+            date = item["date"]
+            for work_item in item["data"]:
+                flattened_data_list.append(
+                    {
+                        "date": date,
+                        "user_name": work_item["user_name"],
+                        "major_category": work_item["major_category"]["category_name"],
+                        "sub_category": work_item["sub_category"]["category_name"],
+                        "sub_sub_category": work_item["sub_sub_category"]["category_name"],
+                        "work_time": work_item["work_time"],
+                    }
+                )
+        work_df = pd.DataFrame(flattened_data_list)
+
+        grouped_work_df = work_df.groupby(['user_name', 'major_category', 'sub_category'])['work_time'].sum().reset_index()
+
+        pivot_work_df = grouped_work_df.pivot_table(values='work_time', index='user_name', columns=['major_category', 'sub_category'])
+    
+    pivot_work_df = pivot_work_df.reindex(multi_index_columns, axis=1)
+    pivot_work_df.fillna("", inplace=True)
+
+    file_name = f"resource/generated_file/{selected_date}.xlsx"
+
+    file_path = Path(file_name)
+    if file_path.exists():
+        file_path.unlink()
+
+    # Save to Excel
+    pivot_work_df.to_excel(file_name)
+    return file_name

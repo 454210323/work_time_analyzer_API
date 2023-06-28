@@ -1,6 +1,2 @@
-from functools import reduce
-aaa="23.0 "
-
-
-
-print(aaa.strip().split(" "))
+dict1={"A":1}
+dict2={"B":2}

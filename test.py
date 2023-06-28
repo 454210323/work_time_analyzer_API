@@ -1,5 +1,7 @@
 from collections import defaultdict
 from functools import reduce
+import pandas as pd
+from pathlib import Path
 
 data = [
     {
@@ -92,39 +94,42 @@ data = [
     },
 ]
 
-results = defaultdict(str)
 
-for item in data:
-    key = (item["major_category"], item["sub_category"], item["user_name"])
-    # results[key] += f"{item['work_time']} {item['sub_sub_category'] if item['sub_sub_category'] !='無' else ''}"
-    sub_sub_category = item["sub_sub_category"]
-    n = "\n"
-    value = (
-        f"{item['work_time']} {sub_sub_category+n if sub_sub_category != '無' else ''}"
-    )
-    results[key] += value
+# Convert the data to DataFrame
+df = pd.DataFrame(data)
 
+print(df)
 
-results_list = [
-    {
-        "major_category": k[0],
-        "sub_category": k[1],
-        "user_name": k[2],
-        "work_time": reduce(lambda a, b: float(a) + float(b), v.strip().split(" "))
-        if "\n" not in v
-        else v,
-    }
-    for k, v in results.items()
-]
+# Group by 'user_name', 'major_category' and 'sub_category' and sum 'work_time'
+df = df.groupby(['user_name', 'major_category', 'sub_category'])['work_time'].sum().reset_index()
 
-print(results)
+print(df)
 
-dict1 = {
-    ("新会員制度", "管理・その他", "123"): "5.0 ",
-    ("新会員制度", "調査", "123"): "23.0 24.0 ",
-    ("保守", "AB票", "123"): "3.8 総合テスト\n6.0 総合テスト\n6.0 管理・その他\n",
-    ("保守", "情報交換票", "123"): "5.0 AB票-2\n4.0 AB票-3\n",
-    ("新会員制度", "情報交換票", "123"): "4.0 AB票-1\n",
-    ("保守", "情報交換票", "あああ"): "33.0 AB票-3\n",
-    ("新会員制度", "製造・単体", "asd"): "2.0 ",
+# Define the specific sub categories for each major category
+major_sub_categories = {
+    '保守': ['AB票', '情報交換票', '管理・その他', '障害票'],
+    '新会員制度': ['基本設計', '移行・リリース', '管理・その他', '結合テスト', '総合テスト', '製造・単体', '詳細設計', '調査']
 }
+
+# Create MultiIndex with all possible combinations of major and specific sub categories
+columns = pd.MultiIndex.from_tuples([(major, sub) for major, subs in major_sub_categories.items() for sub in subs])
+
+# Pivot table to get the format you want
+df_pivot = df.pivot_table(values='work_time', index='user_name', columns=['major_category', 'sub_category'])
+
+print(df_pivot)
+
+# Reindex the columns of the pivot table with the new MultiIndex
+df_pivot = df_pivot.reindex(columns, axis=1)
+
+print(df_pivot)
+
+# Replace NaN values with an empty string
+df_pivot.fillna("", inplace=True)
+
+file_path=Path('output.xlsx')
+if file_path.exists():
+    file_path.unlink()
+
+# Save to Excel
+df_pivot.to_excel('output.xlsx')

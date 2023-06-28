@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request,send_file
 from services import work_data_service
 
 bp_work_data = Blueprint("work_data", __name__, url_prefix="/work_data")
@@ -18,8 +18,8 @@ def get_work_data_by_month_and_team():
 @bp_work_data.route("/month/excel", methods=["GET"])
 def get_work_data_by_month_and_team_excel():
     data=request.args.to_dict()
-    data = work_data_service.get_work_data_by_month_and_team_excel(data)
-    return jsonify(data), 200
+    file_name = work_data_service.generate_work_data_excel(data)
+    return send_file(file_name, as_attachment=True), 200
 
 
 @bp_work_data.route("/day/<string:user_id>/<string:date_str>")
