@@ -4,10 +4,12 @@ import os
 class Config:
     DEBUG = False
     TESTING = False
-    SECRET_KEY = 'your-secret-key'
-    SQLALCHEMY_DATABASE_URI = 'mysql+pymysql://root:admin@localhost/work'
+    SECRET_KEY = "your-secret-key"
+    SQLALCHEMY_DATABASE_URI = "mysql+pymysql://root:root@localhost/work"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO = True
+    UPLOAD_FOLDER = "resource/upload_file"
+    GENERATED_FOLDER = "resource/generated_file"
 
 
 class ProductionConfig(Config):
