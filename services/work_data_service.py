@@ -4,6 +4,7 @@ from typing import Dict, List
 from collections import defaultdict
 from functools import reduce
 from pathlib import Path
+import re
 
 import pandas as pd
 from sqlalchemy import and_, extract, func
@@ -38,6 +39,16 @@ def parse_json(work_data):
         work_time,
         work_content,
     )
+
+
+def get_max_seq(user_id, work_date):
+    max_seq = (
+        db.session.query(func.max(WorkData.seq))
+        .filter_by(user_id=user_id, work_date=work_date)
+        .scalar()
+        or 0
+    )
+    return max_seq
 
 
 def modify_work_data(work_data):
@@ -79,12 +90,7 @@ def add_work_data(work_data):
         work_content,
     ) = parse_json(work_data)
 
-    max_seq = (
-        db.session.query(func.max(WorkData.seq))
-        .filter_by(user_id=user_id, work_date=work_date)
-        .scalar()
-        or 0
-    )
+    max_seq = get_max_seq(user_id, work_date)
 
     new_work_data = WorkData(
         user_id=user_id,
@@ -270,7 +276,8 @@ def generate_work_data_excel(data: Dict):
         )
 
     pivot_work_df = pivot_work_df.reindex(multi_index_columns, axis=1)
-    pivot_work_df.fillna("", inplace=True)
+    pivot_work_df.fillna(0, inplace=True)
+    pivot_work_df['TOTAL']=pivot_work_df.sum(axis=1)
 
     file_name = f"{current_app.config['GENERATED_FOLDER']}/{selected_date}.xlsx"
 
@@ -284,20 +291,76 @@ def generate_work_data_excel(data: Dict):
 
 
 def parse_upload_file(file):
-    work_time_df = pd.read_excel(file, usecols="A:D,G", skiprows=1)
+    file_name = file.filename
+
+    user_id = get_user_id_from_file_name(file_name)
+
+    work_time_df = pd.read_excel(file, usecols="A:F", skiprows=1).fillna("")
     work_time_df.columns = [
         "date",
         "major_category",
         "sub_category",
         "work_content",
-        "work_time",
+        "work_time_1",
+        "work_time_2",
     ]
+    work_time_df["date"] = work_time_df["date"].apply(decimal_to_time)
+    work_time_df["work_time_1"] = work_time_df["work_time_1"].apply(time_to_decimal)
+    work_time_df["work_time_2"] = work_time_df["work_time_2"].apply(time_to_decimal)
+
+    work_time_df["work_time"] = (
+        work_time_df["work_time_1"] + work_time_df["work_time_2"]
+    )
 
     category_dict = {
         category.category_name: category.id
         for category in WorkCategory.get_all_categories()
     }
 
-    work_time_df.replace(category_dict)
-    print(category_dict)
-    print(work_time_df)
+    work_time_df.replace(category_dict, inplace=True)
+
+    for index, row in work_time_df.iterrows():
+        max_seq = get_max_seq(user_id, row["date"])
+        work_data = WorkData(
+            user_id=user_id,
+            work_date=row["date"],
+            seq=max_seq + 1,
+            major_category_id=row["major_category"],
+            sub_category_id=row["sub_category"],
+            sub_sub_category_id="",
+            work_time=row["work_time"],
+            work_content=row["work_content"],
+        )
+        db.session.add(work_data)
+    db.session.commit()
+
+
+def get_user_id_from_file_name(file_name):
+    pattern_str = r"[0-9]{6}_(.*)\.xlsx"
+    pattern = re.compile(pattern_str)
+    _user_name = pattern.findall(file_name)[0]
+    result: List[User] = User.get_user_by_conditions(name=_user_name)
+    if not len(result) == 1:
+        raise Exception("multi user name or user not exist")
+    return result[0].id
+
+
+def time_to_decimal(time: datetime):
+    if time == "":
+        return 0
+
+    hours = time.hour
+    minutes = time.minute
+    seconds = time.second
+
+    # hours, minutes, seconds = map(int, time.split(":"))
+
+    total_hours = hours + minutes / 60 + seconds / 3600
+
+    return round(total_hours, 2)
+
+
+def decimal_to_time(time: int):
+    base_date = pd.Timestamp("1899-12-30")
+    date = base_date + pd.Timedelta(days=time)
+    return date
